@@ -51,3 +51,81 @@ add_action('init', function() {
         }
     }
 });
+
+## Code Snippets
+
+### 1. Backend Registration & Commission Logic
+add_action('wp_ajax_basic_referral_handler', 'handle_basic_referral_registration');
+add_action('wp_ajax_nopriv_basic_referral_handler', 'handle_basic_referral_registration');
+
+function handle_basic_referral_registration() {
+    $data = json_decode(file_get_contents('php://input'), true);
+
+    if (empty($data['email']) || empty($data['affiliate_id'])) {
+        wp_send_json(['success' => false, 'message' => 'Missing required data.']);
+    }
+
+    $email = sanitize_email($data['email']);
+    $full_name = sanitize_text_field($data['full_name']);
+    $affiliate_id = intval($data['affiliate_id']);
+    $reference = sanitize_text_field($data['reference']);
+
+    // Create user
+    if (email_exists($email)) {
+        wp_send_json(['success' => false, 'message' => 'Email already registered.']);
+    }
+
+    $user_id = wp_create_user($email, $data['password'], $email);
+
+    // Assign membership
+    if (function_exists('wc_memberships_create_user_membership')) {
+        wc_memberships_create_user_membership([
+            'plan_id' => 'basic-membership',
+            'user_id' => $user_id,
+            'status'  => 'active'
+        ]);
+    }
+
+    // Log affiliate commission
+    if (function_exists('affiliate_wp')) {
+        affiliate_wp()->referrals->add([
+            'affiliate_id' => $affiliate_id,
+            'amount'       => 6250,
+            'reference'    => $reference,
+            'context'      => 'membership_referral',
+            'status'       => 'unpaid'
+        ]);
+    }
+
+    wp_send_json(['success' => true]);
+}
+
+### 2. Paystack Payment Integration
+const handler = PaystackPop.setup({
+    key: 'pk_live_xxxxxxxxxxxxxxxxx', // mask this
+    email: email,
+    amount: 3000000,
+    currency: 'NGN',
+    metadata: {
+        referral_id: referral_id
+    },
+    callback: function (response) {
+        const reference = response.reference;
+
+        if (referral_id) {
+            window.location.href = `/affiliate-success/?reference=${reference}&ref=${referral_id}`;
+        } else {
+            window.location.href = `/direct-success/?reference=${reference}`;
+        }
+    }
+});
+
+### 3. Registration Form (Simplified)
+<form id="basic-membership-referral-form">
+  <input type="text" name="full_name" required />
+  <input type="email" name="email" required />
+  <input type="tel" name="phone" required />
+  <input type="text" name="affiliate_id" required />
+  <input type="password" name="password" required />
+  <button type="submit">Join Basic Plan</button>
+</form>
